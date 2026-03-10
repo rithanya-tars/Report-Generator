@@ -1,0 +1,14 @@
+{
+  "_instructions": "Fill this file every month from the Tars Analyze section. Delete this _instructions line before saving.",
+  "period": "YYYY-MM",
+  "period_label": "Month Year (e.g. January 2026)",
+  "bot_visits": 0,
+  "conversations": 0,
+  "goal_completions": 0,
+  "goals_achieved_percent": 0,
+  "unique_visits": 0,
+  "unique_conversations": 0,
+  "unique_goal_completions": 0,
+  "unique_goals_achieved_percent": 0,
+  "notes": "Any context for this month — campaigns running, events, unusual traffic, etc."
+}
