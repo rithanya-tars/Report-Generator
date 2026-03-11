@@ -115,7 +115,7 @@ python generate.py --client Amex --month 2026-01 --dry-run
 
 ---
 
-## v1.5 — Number Locking Feature (in progress)
+## v1.5 — Number Locking Feature ✅
 **Date:** March 11, 2026
 
 ### What changed
@@ -123,6 +123,24 @@ python generate.py --client Amex --month 2026-01 --dry-run
 - Solution: Python calculates all numbers directly from CSV, Claude only writes insights
 - Numbers never go through Claude → 100% accurate data in reports
 - Dynamic: works for any client, any number of rows, any gambit column names
+
+### New file added
+- `src/number_calculator.py` — calculates ALL numbers directly from CSV + analyze.json
+
+### What changed
+- `src/claude_analyst.py` — Claude now only writes insights, never numbers
+- `src/pptx_generator.py` — accepts locked_numbers dict, uses them directly in slides
+- `generate.py` — wires number_calculator between data_processor and claude_analyst
+
+### Flow after this change
+```
+CSV + analyze.json
+    → number_calculator.py  (Python math, 100% accurate)
+        → locked numbers go straight to PPTX
+        → summary goes to Claude
+            → Claude writes insights only
+                → insights + locked numbers → PPTX
+```
 
 ---
 

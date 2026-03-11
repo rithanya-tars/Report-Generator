@@ -1,12 +1,14 @@
 """
 claude_analyst.py
-Sends structured client data to Claude API.
-Claude decides what slides to make, writes all insights, structures all tables.
+Sends structured client data to Claude via Claude Code CLI.
+No API key needed — uses your Claude Code subscription (Max plan).
 Returns a complete slide plan as JSON.
 """
 
 import json
 import os
+import subprocess
+import shutil
 
 
 SYSTEM_PROMPT = """You are an expert business analyst at Tars, a conversational AI platform. 
@@ -27,7 +29,7 @@ SLIDE TYPES you can use (choose what makes sense for the data):
 - "overview_stats": Key metrics in big number cards  
 - "monthly_trend": Table + bar chart of visits/conversations across months
 - "user_journey": How users navigate through the chatbot (gambit flow)
-- "conversion_funnel": Specific conversion analysis (e.g. upgrade offer → apply)
+- "conversion_funnel": Specific conversion analysis (e.g. upgrade offer -> apply)
 - "device_breakdown": Mobile vs desktop split
 - "gambit_analysis": Detailed breakdown of specific gambit options chosen
 - "insights_summary": Key takeaways in bullet form
@@ -119,44 +121,82 @@ Based on this data:
 Return ONLY the JSON slide plan. No other text."""
 
 
-def get_slide_plan(client_data: dict) -> dict:
-    """Call Claude API and get back a structured slide plan."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError(
-            "ANTHROPIC_API_KEY not found!\n"
-            "Please set it in your .env file:\n"
-            "  ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxx"
-        )
+def get_slide_plan(client_data: dict, debug: bool = False) -> dict:
+    """Call Claude via Claude Code CLI — uses Max subscription, no API key needed."""
 
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    if not shutil.which("claude"):
+        raise EnvironmentError(
+            "Claude Code CLI not found!\n"
+            "Install it with: npm install -g @anthropic-ai/claude-code\n"
+            "Then login with: claude"
+        )
 
     print("  🤖 Sending data to Claude for analysis...")
 
-    message = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=8192,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {"role": "user", "content": build_prompt(client_data)}
-        ]
-    )
+    full_prompt = f"{SYSTEM_PROMPT}\n\n{build_prompt(client_data)}"
 
-    response_text = message.content[0].text.strip()
+    try:
+        result = subprocess.run(
+            ["claude", "-p", full_prompt],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+    except subprocess.TimeoutExpired:
+        raise TimeoutError("Claude took too long to respond. Please try again.")
+    except FileNotFoundError:
+        raise EnvironmentError(
+            "Claude Code CLI not found!\n"
+            "Install it with: npm install -g @anthropic-ai/claude-code\n"
+            "Then login with: claude"
+        )
 
-    # Strip markdown code blocks if Claude added them
-    if response_text.startswith("```"):
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Claude Code CLI error:\n{result.stderr.strip()}\n"
+            "Make sure you are logged in by running: claude"
+        )
+
+    response_text = result.stdout.strip()
+
+    if debug:
+        with open("debug_claude_raw.txt", "w") as f:
+            f.write(response_text)
+        print("  🐛 Raw Claude response saved to: debug_claude_raw.txt")
+
+    # Strip markdown code blocks if present
+    if "```" in response_text:
         lines = response_text.split("\n")
-        response_text = "\n".join(lines[1:-1])
+        cleaned, inside = [], False
+        for line in lines:
+            if line.strip().startswith("```"):
+                inside = not inside
+                continue
+            cleaned.append(line)
+        response_text = "\n".join(cleaned).strip()
+
+    # Extract JSON object from response
+    start = response_text.find("{")
+    end = response_text.rfind("}") + 1
+    if start != -1 and end > start:
+        response_text = response_text[start:end]
 
     try:
         slide_plan = json.loads(response_text)
     except json.JSONDecodeError as e:
+        if debug:
+            with open("debug_parse_error.txt", "w") as f:
+                f.write(response_text)
         raise ValueError(
             f"Claude returned invalid JSON: {e}\n"
-            f"Response was:\n{response_text[:500]}"
+            f"Response preview:\n{response_text[:500]}\n"
+            "Run with --debug flag to save the full response."
         )
+
+    if debug:
+        with open("debug_slide_plan.json", "w") as f:
+            json.dump(slide_plan, f, indent=2)
+        print("  🐛 Parsed slide plan saved to: debug_slide_plan.json")
 
     print(f"  ✅ Claude generated {len(slide_plan.get('slides', []))} slides")
     return slide_plan

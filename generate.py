@@ -30,6 +30,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from data_processor import load_client_data
+from number_calculator import calculate_all_numbers
 from claude_analyst import get_slide_plan
 from pptx_generator import generate_pptx
 from pdf_converter import convert_pptx_to_pdf
@@ -116,8 +117,12 @@ def main():
 
     # ── Step 2: Get slide plan from Claude ─────────────────────────────────────
     print("\n🤖 Step 2: Sending data to Claude for analysis...")
+    # Calculate all numbers from raw data first — Claude never touches numbers
+    locked_numbers = calculate_all_numbers(client_data)
+    print(f"  ✅ Numbers locked from raw data")
+
     try:
-        slide_plan = get_slide_plan(client_data)
+        slide_plan = get_slide_plan(client_data, locked_numbers)
     except ValueError as e:
         print(f"❌ {e}")
         sys.exit(1)
@@ -139,7 +144,7 @@ def main():
     assets["client_name"] = args.client
 
     try:
-        generate_pptx(slide_plan, assets, str(pptx_path))
+        generate_pptx(slide_plan, assets, str(pptx_path), locked_numbers)
     except Exception as e:
         print(f"❌ Error generating PPTX: {e}")
         import traceback
