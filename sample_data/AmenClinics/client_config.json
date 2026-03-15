@@ -1,0 +1,10 @@
+{
+  "bot_type": "ai_agent",
+  "goal_definition": "User submits a consultation request or books an appointment",
+  "goal_detection": {
+    "column": "Prime_Response",
+    "keywords": ["appointment", "booked", "consultation", "scheduled"]
+  },
+  "key_columns": ["Prime_Response", "visit_url"],
+  "context": "Amen Clinics is a healthcare provider. The AI agent bot assists visitors in booking consultations and answering FAQs about brain health services."
+}

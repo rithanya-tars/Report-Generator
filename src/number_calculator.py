@@ -204,6 +204,27 @@ def calculate_duration_stats(csv_rows: list) -> dict:
 
 # ─── MAIN ENTRY POINT ─────────────────────────────────────────────────────────
 
+def calculate_goal_completions_from_csv(csv_rows: list, client_config: dict) -> int:
+    """
+    For ai_agent bot type, detect goal completions from CSV using
+    goal_detection keywords in the configured column.
+    Returns count of rows where any keyword was found.
+    """
+    goal_detection = client_config.get("goal_detection", {})
+    column = goal_detection.get("column", "")
+    keywords = goal_detection.get("keywords", [])
+
+    if not column or not keywords:
+        return 0
+
+    count = 0
+    for row in csv_rows:
+        val = row.get(column, "").strip().lower()
+        if any(kw.lower() in val for kw in keywords):
+            count += 1
+    return count
+
+
 def calculate_all_numbers(client_data: dict) -> dict:
     """
     Master function — calculates ALL numbers for the report.
@@ -224,6 +245,8 @@ def calculate_all_numbers(client_data: dict) -> dict:
         key=lambda x: x["month"]
     )
 
+    client_config = client_data.get("client_config", {})
+
     analyze = current.get("analyze", {}) if current else {}
     csv_rows = []
 
@@ -234,6 +257,27 @@ def calculate_all_numbers(client_data: dict) -> dict:
 
     # ── Overview stats (from analyze.json) ────────────────────────────────────
     overview = calculate_overview_stats(analyze, csv_rows)
+
+    # ── For ai_agent bots, calculate goal completions from CSV keywords ──────
+    bot_type = client_config.get("bot_type", "gambit")
+    if bot_type == "ai_agent" and csv_analysis.get("gambit_columns"):
+        # Re-load raw CSV rows for keyword-based goal detection
+        from pathlib import Path
+        data_root_path = Path(client_data.get("_data_root", "sample_data"))
+        month_csv_path = data_root_path / client_data["client_name"] / client_data["target_month"] / "raw_data.csv"
+        if month_csv_path.exists():
+            import csv as csv_mod
+            with open(month_csv_path, "r", encoding="utf-8-sig") as f:
+                reader = csv_mod.DictReader(f)
+                raw_rows = [{k.strip(): v.strip() for k, v in row.items()} for row in reader]
+            csv_goal_count = calculate_goal_completions_from_csv(raw_rows, client_config)
+            if csv_goal_count > 0:
+                overview["goal_completions"] = csv_goal_count
+                conversations = overview.get("conversations", 0)
+                if conversations:
+                    overview["goals_achieved_percent"] = round(
+                        (csv_goal_count / conversations) * 100, 1
+                    )
 
     # ── Monthly trend (from all analyze.json files) ────────────────────────────
     trend = calculate_monthly_trend(all_months_full)

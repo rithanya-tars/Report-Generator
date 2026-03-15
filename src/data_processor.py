@@ -50,13 +50,24 @@ def load_raw_csv(month_path: Path) -> list[dict]:
     return rows
 
 
-def analyze_csv(rows: list[dict]) -> dict:
+def analyze_csv(rows: list[dict], client_config: dict = None) -> dict:
     """
     Intelligently analyze CSV rows regardless of column structure.
     Detects gambit columns, device distribution, conversation patterns.
     """
     if not rows:
         return {}
+
+    # Build navigation ignore list (case-insensitive)
+    default_nav_values = [
+        "Previous Menu", "Previous menu", "Main Menu", "Main menu",
+        "-No Input-", "''-No Input-"
+    ]
+    if client_config and "navigation_values" in client_config:
+        nav_values = client_config["navigation_values"]
+    else:
+        nav_values = default_nav_values
+    nav_values_lower = {v.lower() for v in nav_values}
 
     all_columns = list(rows[0].keys())
 
@@ -77,12 +88,30 @@ def analyze_csv(rows: list[dict]) -> dict:
         if device:
             device_counts[device] += 1
 
+    def is_navigation(val: str) -> bool:
+        """Check if a value is a navigation action to ignore."""
+        val_lower = val.lower()
+        if val_lower in nav_values_lower:
+            return True
+        if val_lower.startswith("''-no input-"):
+            return True
+        return False
+
     # Gambit value distributions
     gambit_distributions = {}
     for col in gambit_cols:
-        values = [r[col] for r in rows if r.get(col) and r[col] not in ("-No Input-", "", "None")]
-        if values:
-            gambit_distributions[col] = dict(Counter(values).most_common(10))
+        counter = Counter()
+        for r in rows:
+            raw = r.get(col)
+            if not raw or raw in ("", "None"):
+                continue
+            # Split || delimited values, deduplicate within the cell, count each unique option once per row
+            parts = set(p.strip() for p in raw.split("||"))
+            for part in parts:
+                if part and not is_navigation(part):
+                    counter[part] += 1
+        if counter:
+            gambit_distributions[col] = dict(counter.most_common(10))
 
     # Conversation duration stats
     durations = []
@@ -141,6 +170,13 @@ def load_client_data(data_root: str, client_name: str, target_month: str) -> dic
             f"Available months: {', '.join(all_months)}"
         )
 
+    # Client config (optional per-client settings)
+    client_config = {}
+    config_file = client_path / "client_config.json"
+    if config_file.exists():
+        with open(config_file, "r") as f:
+            client_config = json.load(f)
+
     # Load all months up to and including target
     months_to_load = [m for m in all_months if m <= target_month]
 
@@ -154,7 +190,7 @@ def load_client_data(data_root: str, client_name: str, target_month: str) -> dic
             continue
 
         rows = load_raw_csv(month_path)
-        csv_analysis = analyze_csv(rows)
+        csv_analysis = analyze_csv(rows, client_config)
 
         monthly_data.append({
             "month": month,
@@ -200,4 +236,5 @@ def load_client_data(data_root: str, client_name: str, target_month: str) -> dic
             for m in monthly_data
         ],
         "assets": assets,
+        "client_config": client_config,
     }

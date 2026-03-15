@@ -144,6 +144,28 @@ CSV + analyze.json
 
 ---
 
+## v1.6 — Accurate Gambit Counting + Client Config System
+**Date:** March 15, 2026
+
+### Problems fixed
+- Gambit counts were wrong — "Upgrade Offer || Upgrade Offer" was counting as 2 instead of 1
+- Navigation values like "Previous Menu" and "Main Menu" were being counted as real selections
+- Claude was making up gambit numbers even when given locked numbers
+
+### What changed
+- `src/data_processor.py` — split `||` values, deduplicate within same row, filter navigation values
+- Numbers now verified against Google Sheets COUNTIF — 100% match
+- `client_config.json` now includes full gambit repository with level, parent, description for each gambit
+
+### New files
+- `Tars_Reports/Amex/client_config.json` — complete Amex bot flow map built from actual bot JSON
+- `sample_data/Amex/client_config.json` — updated sample for new clients
+
+### Verification method
+Use `=COUNTIF(column,"*Option Name*")` in Google Sheets to verify any gambit count
+
+---
+
 ## Pending / Next Steps
 - [ ] Install LibreOffice for PDF export
 - [ ] Get CSM feedback on slide design

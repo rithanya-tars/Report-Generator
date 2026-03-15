@@ -1,0 +1,7 @@
+{
+  "bot_type": "gambit",
+  "goal_definition": "User completes the lead generation flow by submitting their contact details",
+  "goal_detection": {},
+  "key_columns": ["What_are_you_looking_for", "Select_your_card_type"],
+  "context": "Amex uses a gambit-based chatbot to qualify leads and route users to the right credit card product."
+}
