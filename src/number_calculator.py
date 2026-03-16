@@ -206,9 +206,10 @@ def calculate_duration_stats(csv_rows: list) -> dict:
 
 def calculate_goal_completions_from_csv(csv_rows: list, client_config: dict) -> int:
     """
-    For ai_agent bot type, detect goal completions from CSV using
-    goal_detection keywords in the configured column.
-    Returns count of rows where any keyword was found.
+    Detect goal completions from CSV using goal_detection keywords.
+    Scans the configured column AND any column whose name contains
+    'Prime Response' (case-insensitive). A row counts as a match if
+    any keyword is found in any of the scanned columns.
     """
     goal_detection = client_config.get("goal_detection", {})
     column = goal_detection.get("column", "")
@@ -217,11 +218,23 @@ def calculate_goal_completions_from_csv(csv_rows: list, client_config: dict) -> 
     if not column or not keywords:
         return 0
 
+    keywords_lower = [kw.lower() for kw in keywords]
+
+    # Build set of columns to scan: configured column + any "Prime Response" columns
+    scan_columns = set()
+    scan_columns.add(column)
+    if csv_rows:
+        for col_name in csv_rows[0].keys():
+            if "prime response" in col_name.lower():
+                scan_columns.add(col_name)
+
     count = 0
     for row in csv_rows:
-        val = row.get(column, "").strip().lower()
-        if any(kw.lower() in val for kw in keywords):
-            count += 1
+        for col in scan_columns:
+            val = row.get(col, "").strip().lower()
+            if any(kw in val for kw in keywords_lower):
+                count += 1
+                break  # count each row at most once
     return count
 
 
@@ -258,19 +271,38 @@ def calculate_all_numbers(client_data: dict) -> dict:
     # ── Overview stats (from analyze.json) ────────────────────────────────────
     overview = calculate_overview_stats(analyze, csv_rows)
 
-    # ── For ai_agent bots, calculate goal completions from CSV keywords ──────
-    bot_type = client_config.get("bot_type", "gambit")
-    if bot_type == "ai_agent" and csv_analysis.get("gambit_columns"):
-        # Re-load raw CSV rows for keyword-based goal detection
-        from pathlib import Path
-        data_root_path = Path(client_data.get("_data_root", "sample_data"))
-        month_csv_path = data_root_path / client_data["client_name"] / client_data["target_month"] / "raw_data.csv"
+    # ── Smart goal detection ─────────────────────────────────────────────────
+    # If dashboard tracks goals (goal_completions > 0), trust dashboard.
+    # If not, fall back to keyword detection from CSV when goal_detection
+    # is configured in client_config.
+    dashboard_goals = analyze.get("goal_completions", 0)
+    goal_detection_cfg = client_config.get("goal_detection", {})
+    has_goal_detection = (
+        goal_detection_cfg.get("column") and goal_detection_cfg.get("keywords")
+    )
+
+    if dashboard_goals and dashboard_goals > 0:
+        # Dashboard has real goal data — use it as-is
+        print(f"✅ Using {dashboard_goals} goal completions from Tars dashboard")
+    elif has_goal_detection:
+        # Dashboard shows 0 — attempt keyword detection from CSV
+        from pathlib import Path as _Path
+        import csv as _csv_mod
+        data_root_path = _Path(client_data.get("_data_root", "sample_data"))
+        month_csv_path = (
+            data_root_path / client_data["client_name"]
+            / client_data["target_month"] / "raw_data.csv"
+        )
         if month_csv_path.exists():
-            import csv as csv_mod
             with open(month_csv_path, "r", encoding="utf-8-sig") as f:
-                reader = csv_mod.DictReader(f)
-                raw_rows = [{k.strip(): v.strip() for k, v in row.items()} for row in reader]
-            csv_goal_count = calculate_goal_completions_from_csv(raw_rows, client_config)
+                reader = _csv_mod.DictReader(f)
+                raw_rows = [
+                    {k.strip(): v.strip() for k, v in row.items()}
+                    for row in reader
+                ]
+            csv_goal_count = calculate_goal_completions_from_csv(
+                raw_rows, client_config
+            )
             if csv_goal_count > 0:
                 overview["goal_completions"] = csv_goal_count
                 conversations = overview.get("conversations", 0)
@@ -278,6 +310,11 @@ def calculate_all_numbers(client_data: dict) -> dict:
                     overview["goals_achieved_percent"] = round(
                         (csv_goal_count / conversations) * 100, 1
                     )
+                print(
+                    f"ℹ️  Goals not tracked in Tars dashboard"
+                    f" — detected {csv_goal_count} completions"
+                    f" via keyword detection"
+                )
 
     # ── Monthly trend (from all analyze.json files) ────────────────────────────
     trend = calculate_monthly_trend(all_months_full)

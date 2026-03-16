@@ -166,6 +166,26 @@ Use `=COUNTIF(column,"*Option Name*")` in Google Sheets to verify any gambit cou
 
 ---
 
+## v1.7 — Smart Goal Detection + Amen Clinics Support
+**Date:** March 16, 2026
+
+### What changed
+- `number_calculator.py` — smart goal detection logic:
+  - If analyze.json goal_completions > 0 → use dashboard value (Tars tracked it)
+  - If analyze.json goal_completions == 0 AND client_config has goal_detection → detect from CSV using keywords
+  - Prints clear message explaining which method was used
+- Amen Clinics `client_config.json` created and tested
+- Fixed column name in Amen config: `"Prime Response (AI Agent)"` (not `"Prime_Response"`)
+
+### Amen Clinics test results
+- 2,565 bot visits, 917 conversations detected correctly
+- 87% mobile (1,996), 13% desktop (287) correct
+- ~36 leads detected via keyword detection in Prime Response column
+- Tool correctly explained 0 goal issue and recommended fixing Goal Gambit in Tars
+- Errors in office-hours agent spotted and flagged in Next Steps
+
+---
+
 ## Pending / Next Steps
 - [ ] Install LibreOffice for PDF export
 - [ ] Get CSM feedback on slide design
