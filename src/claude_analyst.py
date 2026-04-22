@@ -7,6 +7,7 @@ Claude must use ONLY the exact numbers provided — never calculate, derive, or 
 
 import json
 import os
+from pathlib import Path
 
 
 SYSTEM_PROMPT = """You are an expert business analyst at Tars, a conversational AI platform.
@@ -162,11 +163,17 @@ def build_prompt(client_data: dict, locked_numbers: dict) -> str:
             config_lines.append(f"CLIENT CONTEXT: {context_note}")
         config_context = "\n=== CLIENT CONFIGURATION ===\n" + "\n".join(config_lines) + "\n"
 
+    # Account-level dossier (optional per-client knowledge)
+    dossier = client_data.get("dossier", "")
+    dossier_block = ""
+    if dossier:
+        dossier_block = f"\n=== ACCOUNT CONTEXT ===\n{dossier}\n=== END ACCOUNT CONTEXT ===\n"
+
     return f"""Analyze this Tars chatbot performance data and create a complete Business Review slide plan.
 
 CLIENT: {client_data['client_name']}
 TARGET MONTH: {client_data['target_month']}
-{config_context}
+{dossier_block}{config_context}
 
 === CRITICAL RULE ===
 You must use ONLY the exact numbers below. NEVER calculate, derive, round, or modify them.
@@ -221,12 +228,26 @@ Based on the above data:
 Return ONLY the JSON slide plan. No other text."""
 
 
-def get_slide_plan(client_data: dict, locked_numbers: dict, debug: bool = False) -> dict:
+def get_slide_plan(client_data: dict, locked_numbers: dict, debug: bool = False, knowledge_dir=None) -> dict:
     """
     Call Claude API — Claude decides slide structure, titles, and writes insights.
     Numbers are already locked in locked_numbers dict and will be injected by pptx_generator.
     Claude must use ONLY the exact numbers provided.
     """
+    # Load optional platform-level knowledge (tars_brain.md) to prepend to system prompt
+    if knowledge_dir is not None:
+        brain_path = Path(knowledge_dir) / "_platform" / "tars_brain.md"
+    else:
+        brain_path = Path(__file__).parent.parent / "knowledge" / "_platform" / "tars_brain.md"
+
+    system_prompt = SYSTEM_PROMPT
+    if brain_path.exists():
+        brain_content = brain_path.read_text(encoding="utf-8")
+        system_prompt = brain_content + "\n" + SYSTEM_PROMPT
+        print(f"  🧠 Loaded tars_brain.md ({len(brain_content)} chars)")
+    else:
+        print(f"  🧠 tars_brain.md not loaded (not found at {brain_path})")
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError(
@@ -243,7 +264,7 @@ def get_slide_plan(client_data: dict, locked_numbers: dict, debug: bool = False)
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=8192,
-        system=SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[
             {"role": "user", "content": build_prompt(client_data, locked_numbers)}
         ]

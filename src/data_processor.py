@@ -177,6 +177,14 @@ def load_client_data(data_root: str, client_name: str, target_month: str) -> dic
         with open(config_file, "r") as f:
             client_config = json.load(f)
 
+    # Dossier (optional per-client knowledge file)
+    dossier = ""
+    dossier_file = client_path / "dossier.md"
+    if dossier_file.exists():
+        with open(dossier_file, "r", encoding="utf-8") as f:
+            dossier = f.read()
+    print(f"  Dossier: {'found' if dossier else 'not found'} in {client_path}")
+
     # Load all months up to and including target
     months_to_load = [m for m in all_months if m <= target_month]
 
@@ -237,4 +245,5 @@ def load_client_data(data_root: str, client_name: str, target_month: str) -> dic
         ],
         "assets": assets,
         "client_config": client_config,
+        "dossier": dossier,
     }

@@ -34,6 +34,7 @@ from number_calculator import calculate_all_numbers
 from claude_analyst import get_slide_plan
 from pptx_generator import generate_pptx
 from pdf_converter import convert_pptx_to_pdf
+from one_pager_generator import generate_one_pager
 
 
 def parse_args():
@@ -55,6 +56,10 @@ Examples:
                         help="Path to TarsReports folder (overrides TARS_DATA_PATH in .env)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show processed data without calling Claude API or generating files")
+    parser.add_argument("--knowledge", default="knowledge/",
+                        help="Path to knowledge folder (default: knowledge/)")
+    parser.add_argument("--format", choices=["deck", "one-pager"], default="deck",
+                        help="Output format: 'deck' (PPTX+PDF) or 'one-pager' (HTML+PDF)")
     return parser.parse_args()
 
 
@@ -115,14 +120,43 @@ def main():
         print("\n✅ Dry run complete. No files were generated.")
         return
 
-    # ── Step 2: Get slide plan from Claude ─────────────────────────────────────
-    print("\n🤖 Step 2: Sending data to Claude for analysis...")
-    # Calculate all numbers from raw data first — Claude never touches numbers
+    # ── Step 2: Calculate locked numbers ───────────────────────────────────────
+    print("\n🔢 Step 2: Locking numbers from raw data...")
     locked_numbers = calculate_all_numbers(client_data)
     print(f"  ✅ Numbers locked from raw data")
 
+    output_dir = Path(data_path) / args.client / args.month
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Branch: one-pager format ───────────────────────────────────────────────
+    if args.format == "one-pager":
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        try:
+            html_path = generate_one_pager(
+                client_data=client_data,
+                locked_numbers=locked_numbers,
+                output_dir=str(output_dir),
+                api_key=api_key,
+                knowledge_dir=args.knowledge,
+            )
+        except Exception as e:
+            print(f"❌ Error generating one-pager: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+
+        print("\n" + "="*60)
+        print("  ✅ One-pager Generated Successfully!")
+        print("="*60)
+        print(f"  📄 HTML  : {html_path}")
+        print(f"  📁 Folder: {output_dir}")
+        print("="*60 + "\n")
+        return
+
+    # ── Branch: deck format (default) ──────────────────────────────────────────
+    print("\n🤖 Step 3: Sending data to Claude for analysis...")
     try:
-        slide_plan = get_slide_plan(client_data, locked_numbers)
+        slide_plan = get_slide_plan(client_data, locked_numbers, knowledge_dir=args.knowledge)
     except ValueError as e:
         print(f"❌ {e}")
         sys.exit(1)
@@ -130,11 +164,8 @@ def main():
         print(f"❌ Unexpected error calling Claude API: {e}")
         sys.exit(1)
 
-    # ── Step 3: Generate PPTX ──────────────────────────────────────────────────
-    print("\n🎨 Step 3: Generating PowerPoint deck...")
-
-    output_dir = Path(data_path) / args.client / args.month
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # ── Step 4: Generate PPTX ──────────────────────────────────────────────────
+    print("\n🎨 Step 4: Generating PowerPoint deck...")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     pptx_filename = f"{args.client}_{args.month}_report_{timestamp}.pptx"
@@ -151,8 +182,8 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-    # ── Step 4: Convert to PDF ─────────────────────────────────────────────────
-    print("\n📄 Step 4: Converting to PDF...")
+    # ── Step 5: Convert to PDF ─────────────────────────────────────────────────
+    print("\n📄 Step 5: Converting to PDF...")
     pdf_path = convert_pptx_to_pdf(str(pptx_path), str(output_dir))
 
     # ── Done ───────────────────────────────────────────────────────────────────
